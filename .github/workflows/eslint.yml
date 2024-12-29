@@ -73,7 +73,7 @@ jobs:
 
             # Step 5: Add eslint-disable Comment
             echo "Adding eslint-disable comment to $FILE at line $LINE..."
-            sed -i "${LINE}i // eslint-disable-next-line $RULE // See: $ISSUE_URL" "$FILE" || {
+            sed -i "${LINE}i // eslint-disable-next-line $RULE -- $ISSUE_URL" "$FILE" || {
               echo "Failed to add eslint-disable comment. Skipping..."
               continue
             }
@@ -83,7 +83,7 @@ jobs:
             git config --global user.name "GitHub Actions Bot"
             git config --global user.email "actions@github.com"
             git add "$FILE"
-            git commit -m "Add eslint-disable for $RULE in $FILE (See: $ISSUE_URL)" || {
+            git commit -m "chore: add eslint-disable for $RULE" || {
               echo "Failed to commit changes for FILE=$FILE. Skipping..."
               continue
             }
@@ -99,19 +99,32 @@ jobs:
           echo "All tasks completed successfully."
 
       - name: Close Fixed Issues
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          FIXED_ERRORS=$(npx eslint . --format json | jq -c '.[] | select(.errorCount == 0)')
-          if [ -n "$FIXED_ERRORS" ]; then
-            for issue in $(curl -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-                "https://api.github.com/repos/${{ github.repository }}/issues?state=open" | jq -c '.[]'); do
-              ISSUE_URL=$(echo $issue | jq -r '.html_url')
-              RULE=$(echo $issue | jq -r '.title' | grep -oP '(?<=ESLint Error: ).*?(?= in)')
-              FILE=$(echo $issue | jq -r '.title' | grep -oP '(?<=in ).*?$')
-              if echo "$FIXED_ERRORS" | grep -q "$RULE"; then
-                # Close the issue
-                curl -X PATCH -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-                  -d "{\"state\": \"closed\", \"body\": \"Fixed in commit $(git rev-parse HEAD)\"}" \
-                  "$ISSUE_URL"
-              fi
-            done
+          echo "Checking for fixed errors..."
+
+          # Run ESLint and find files with no errors
+          FIXED_FILES=$(npx eslint . --format json | jq -c '.[] | select(.errorCount == 0) | .filePath')
+          if [ -z "$FIXED_FILES" ]; then
+            echo "No files have all errors fixed. Exiting."
+            exit 0
           fi
+
+          echo "Fixed files: $FIXED_FILES"
+
+          # Iterate through fixed files to find eslint-disable comments
+          for file in $FIXED_FILES; do
+            echo "Scanning $file for eslint-disable comments with issue links..."
+            grep -oP '// eslint-disable-next-line.*? -- https://github.com/\S+' "$file" | while read -r comment; do
+              ISSUE_URL=$(echo "$comment" | grep -oP 'https://github.com/\S+')
+              echo "Found linked issue: $ISSUE_URL"
+
+              # Close the GitHub issue
+              curl -s -X PATCH -H "Authorization: token $GITHUB_TOKEN" \
+                -d "{\"state\": \"closed\", \"body\": \"fixed in $(git rev-parse HEAD)\"}" \
+                "$ISSUE_URL"
+
+              echo "Closed issue: $ISSUE_URL"
+            done
+          done
