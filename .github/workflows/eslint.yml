@@ -5,12 +5,13 @@ on:
     branches:
       - main
 
-permissions:
-  contents: write
-
 jobs:
   eslint:
     runs-on: ubuntu-latest
+
+    permissions:
+      issues: write
+      contents: write
 
     steps:
       - name: Checkout code
