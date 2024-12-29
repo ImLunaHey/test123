@@ -1,0 +1,67 @@
+name: Handle ESLint Errors
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  eslint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run ESLint
+        run: |
+          npx eslint . --format json -o eslint-report.json || true
+
+      - name: Process ESLint Errors
+        run: |
+          ERRORS=$(cat eslint-report.json | jq -c '.[] | select(.errorCount > 0)')
+          if [ -n "$ERRORS" ]; then
+            for error in $(echo "$ERRORS" | jq -c '.messages[] | select(.severity == 2)'); do
+              FILE=$(echo $error | jq -r '.filePath')
+              LINE=$(echo $error | jq -r '.line')
+              RULE=$(echo $error | jq -r '.ruleId')
+
+              # Create a GitHub issue
+              ISSUE_URL=$(curl -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+                -d "{\"title\": \"ESLint Error: $RULE in $FILE\", \"body\": \"Error in $FILE at line $LINE for rule $RULE.\"}" \
+                "https://api.github.com/repos/${{ github.repository }}/issues" | jq -r '.html_url')
+
+              # Add eslint-disable comment with issue link
+              sed -i "${LINE}i // eslint-disable-next-line $RULE // See: $ISSUE_URL" "$FILE"
+
+              # Commit the change
+              git config --global user.name "GitHub Actions Bot"
+              git config --global user.email "actions@github.com"
+              git add "$FILE"
+              git commit -m "Add eslint-disable for $RULE in $FILE (See: $ISSUE_URL)"
+            done
+
+            # Push all changes to main
+            git push origin main
+          fi
+
+      - name: Close Fixed Issues
+        run: |
+          FIXED_ERRORS=$(npx eslint . --format json | jq -c '.[] | select(.errorCount == 0)')
+          if [ -n "$FIXED_ERRORS" ]; then
+            for issue in $(curl -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+                "https://api.github.com/repos/${{ github.repository }}/issues?state=open" | jq -c '.[]'); do
+              ISSUE_URL=$(echo $issue | jq -r '.html_url')
+              RULE=$(echo $issue | jq -r '.title' | grep -oP '(?<=ESLint Error: ).*?(?= in)')
+              FILE=$(echo $issue | jq -r '.title' | grep -oP '(?<=in ).*?$')
+              if echo "$FIXED_ERRORS" | grep -q "$RULE"; then
+                # Close the issue
+                curl -X PATCH -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+                  -d "{\"state\": \"closed\", \"body\": \"Fixed in commit $(git rev-parse HEAD)\"}" \
+                  "$ISSUE_URL"
+              fi
+            done
+          fi
