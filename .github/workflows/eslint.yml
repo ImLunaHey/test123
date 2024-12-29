@@ -22,46 +22,78 @@ jobs:
 
       - name: Process ESLint Errors
         run: |
+          # Step 1: Parse ESLint Errors
+          echo "Parsing ESLint report..."
+          cat eslint-report.json | jq '.' # Print full JSON report for debugging
           ERRORS=$(cat eslint-report.json | jq -c '.[] | select(.errorCount > 0)')
-            if [ -n "$ERRORS" ]; then
-              for error in $(echo "$ERRORS" | jq -c '.messages[] | select(.severity == 2)'); do
-                FILE=$(echo "$error" | jq -r '.filePath')
-                LINE=$(echo "$error" | jq -r '.line')
-                RULE=$(echo "$error" | jq -r '.ruleId')
 
-                # Debug output
-                echo "Processing: RULE=$RULE, FILE=$FILE, LINE=$LINE"
+          if [ -z "$ERRORS" ]; then
+            echo "No errors found in ESLint report. Exiting."
+            exit 0
+          fi
 
-                # Ensure variables are properly escaped for JSON
-                JSON_TITLE=$(jq -n --arg rule "$RULE" --arg file "$FILE" '{"title": "ESLint Error: \($rule) in \($file)"}' | jq -r '.title')
-                JSON_BODY=$(jq -n --arg file "$FILE" --arg line "$LINE" --arg rule "$RULE" '{"body": "Error in \($file) at line \($line) for rule \($rule)."}' | jq -r '.body')
+          echo "Found errors. Processing each error..."
+          echo "$ERRORS" | jq '.' # Print all errors for verification
 
-                # Create a GitHub issue
-                ISSUE_URL=$(curl -s -X POST -H "Authorization: token ***" \
-                  -d "{\"title\": \"$JSON_TITLE\", \"body\": \"$JSON_BODY\"}" \
-                  "https://api.github.com/repos/ImLunaHey/test123/issues" | jq -r '.html_url')
+          # Step 2: Iterate Through Errors
+          for error in $(echo "$ERRORS" | jq -c '.messages[] | select(.severity == 2)'); do
+            echo "Processing error: $error" # Debug the raw error object
 
-                # Check if ISSUE_URL is valid
-                if [ -z "$ISSUE_URL" ]; then
-                  echo "Failed to create an issue for RULE=$RULE in FILE=$FILE at LINE=$LINE."
-                  continue
-                fi
+            FILE=$(echo "$error" | jq -r '.filePath')
+            LINE=$(echo "$error" | jq -r '.line')
+            RULE=$(echo "$error" | jq -r '.ruleId')
 
-                # Add eslint-disable comment with issue link
-                sed -i "${LINE}i // eslint-disable-next-line $RULE // See: $ISSUE_URL" "$FILE"
+            echo "Extracted Values: FILE=$FILE, LINE=$LINE, RULE=$RULE" # Debug extracted values
 
-                # Commit the change
-                git config --global user.name "GitHub Actions Bot"
-                git config --global user.email "actions@github.com"
-                git add "$FILE"
-                git commit -m "Add eslint-disable for $RULE in $FILE (See: $ISSUE_URL)"
-              done
+            # Step 3: Prepare JSON Payload for GitHub Issue
+            echo "Preparing GitHub issue payload..."
+            JSON_TITLE=$(jq -n --arg rule "$RULE" --arg file "$FILE" '{"title": "ESLint Error: \($rule) in \($file)"}' | jq -r '.title')
+            JSON_BODY=$(jq -n --arg file "$FILE" --arg line "$LINE" --arg rule "$RULE" '{"body": "Error in \($file) at line \($line) for rule \($rule)."}' | jq -r '.body')
 
-              # Push all changes to main
-              git push origin main
-            else
-              echo "No errors to process."
+            echo "Prepared Title: $JSON_TITLE"
+            echo "Prepared Body: $JSON_BODY"
+
+            # Step 4: Create GitHub Issue
+            echo "Creating GitHub issue..."
+            ISSUE_RESPONSE=$(curl -s -X POST -H "Authorization: token ***" \
+              -d "{\"title\": \"$JSON_TITLE\", \"body\": \"$JSON_BODY\"}" \
+              "https://api.github.com/repos/ImLunaHey/test123/issues")
+
+            echo "GitHub API Response: $ISSUE_RESPONSE"
+
+            ISSUE_URL=$(echo "$ISSUE_RESPONSE" | jq -r '.html_url')
+            if [ -z "$ISSUE_URL" ] || [ "$ISSUE_URL" == "null" ]; then
+              echo "Failed to create GitHub issue for RULE=$RULE in FILE=$FILE at LINE=$LINE."
+              continue
             fi
+            echo "GitHub issue created: $ISSUE_URL"
+
+            # Step 5: Add eslint-disable Comment
+            echo "Adding eslint-disable comment to $FILE at line $LINE..."
+            sed -i "${LINE}i // eslint-disable-next-line $RULE // See: $ISSUE_URL" "$FILE" || {
+              echo "Failed to add eslint-disable comment. Skipping..."
+              continue
+            }
+
+            # Step 6: Commit the Change
+            echo "Committing the change..."
+            git config --global user.name "GitHub Actions Bot"
+            git config --global user.email "actions@github.com"
+            git add "$FILE"
+            git commit -m "Add eslint-disable for $RULE in $FILE (See: $ISSUE_URL)" || {
+              echo "Failed to commit changes for FILE=$FILE. Skipping..."
+              continue
+            }
+          done
+
+          # Step 7: Push Changes to Main
+          echo "Pushing all changes to main branch..."
+          git push origin main || {
+            echo "Failed to push changes to main branch. Exiting..."
+            exit 1
+          }
+
+          echo "All tasks completed successfully."
 
       - name: Close Fixed Issues
         run: |
