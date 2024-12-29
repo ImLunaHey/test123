@@ -105,16 +105,22 @@ jobs:
           echo "Checking for fixed errors..."
 
           # Run ESLint and find files with no errors
-          FIXED_FILES=$(npx eslint . --format json | jq -c '.[] | select(.errorCount == 0) | .filePath')
+          FIXED_FILES=$(npx eslint . --format json | jq -r '.[] | select(.errorCount == 0) | .filePath')
           if [ -z "$FIXED_FILES" ]; then
             echo "No files have all errors fixed. Exiting."
             exit 0
           fi
 
-          echo "Fixed files: $FIXED_FILES"
+          echo "Fixed files:"
+          echo "$FIXED_FILES"
 
           # Iterate through fixed files to find eslint-disable comments
-          for file in $FIXED_FILES; do
+          while IFS= read -r file; do
+            if [ ! -f "$file" ]; then
+              echo "File $file does not exist. Skipping."
+              continue
+            fi
+
             echo "Scanning $file for eslint-disable comments with issue links..."
             grep -oP '// eslint-disable-next-line.*? -- https://github.com/\S+' "$file" | while read -r comment; do
               ISSUE_URL=$(echo "$comment" | grep -oP 'https://github.com/\S+')
@@ -122,9 +128,9 @@ jobs:
 
               # Close the GitHub issue
               curl -s -X PATCH -H "Authorization: token $GITHUB_TOKEN" \
-                -d "{\"state\": \"closed\", \"body\": \"fixed in $(git rev-parse HEAD)\"}" \
+                -d "{\"state\": \"closed\", \"body\": \"Fixed in $(git rev-parse HEAD)\"}" \
                 "$ISSUE_URL"
 
               echo "Closed issue: $ISSUE_URL"
             done
-          done
+          done <<< "$FIXED_FILES"
