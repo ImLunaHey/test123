@@ -33,13 +33,12 @@ jobs:
           fi
 
           echo "Found errors. Processing each error..."
-          echo "$ERRORS" | jq '.' # Print all errors for verification
 
           # Step 2: Iterate Through Errors
-          for error in $(echo "$ERRORS" | jq -c '.messages[] | select(.severity == 2)'); do
+          echo "$ERRORS" | jq -c '.messages[] | select(.severity == 2)' | while read -r error; do
             echo "Processing error: $error" # Debug the raw error object
 
-            FILE=$(echo "$error" | jq -r '.filePath')
+            FILE=$(echo "$ERRORS" | jq -r '.filePath')
             LINE=$(echo "$error" | jq -r '.line')
             RULE=$(echo "$error" | jq -r '.ruleId')
 
