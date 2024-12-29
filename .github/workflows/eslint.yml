@@ -127,7 +127,7 @@ jobs:
               echo "Found linked issue: $ISSUE_URL"
 
               # Close the GitHub issue
-              curl -s -X PATCH -H "Authorization: token $GITHUB_TOKEN" \
+              curl -s -X PATCH -H "Authorization: Bearer $GITHUB_TOKEN" \
                 -d "{\"state\": \"closed\", \"body\": \"Fixed in $(git rev-parse HEAD)\"}" \
                 "$ISSUE_URL"
 
