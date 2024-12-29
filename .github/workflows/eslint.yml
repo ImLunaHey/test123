@@ -23,38 +23,45 @@ jobs:
       - name: Process ESLint Errors
         run: |
           ERRORS=$(cat eslint-report.json | jq -c '.[] | select(.errorCount > 0)')
-          if [ -n "$ERRORS" ]; then
-            for error in $(echo "$ERRORS" | jq -c '.messages[] | select(.severity == 2)'); do
-              FILE=$(echo $error | jq -r '.filePath')
-              LINE=$(echo $error | jq -r '.line')
-              RULE=$(echo $error | jq -r '.ruleId')
+            if [ -n "$ERRORS" ]; then
+              for error in $(echo "$ERRORS" | jq -c '.messages[] | select(.severity == 2)'); do
+                FILE=$(echo "$error" | jq -r '.filePath')
+                LINE=$(echo "$error" | jq -r '.line')
+                RULE=$(echo "$error" | jq -r '.ruleId')
 
-              # Debug output
-              echo "Processing: RULE=$RULE, FILE=$FILE, LINE=$LINE"
+                # Debug output
+                echo "Processing: RULE=$RULE, FILE=$FILE, LINE=$LINE"
 
-              # Create a GitHub issue
-              ISSUE_URL=$(curl -X POST -H "Authorization: token ***" \
-                -d "$(printf '{"title": "ESLint Error: %s in %s", "body": "Error in %s at line %s for rule %s."}' \
-                  "$(echo "$RULE" | jq -sRr @json)" \
-                  "$(echo "$FILE" | jq -sRr @json)" \
-                  "$(echo "$FILE" | jq -sRr @json)" \
-                  "$(echo "$LINE" | jq -sRr @json)" \
-                  "$(echo "$RULE" | jq -sRr @json)")" \
-                "https://api.github.com/repos/ImLunaHey/test123/issues" | jq -r '.html_url')
+                # Ensure variables are properly escaped for JSON
+                JSON_TITLE=$(jq -n --arg rule "$RULE" --arg file "$FILE" '{"title": "ESLint Error: \($rule) in \($file)"}' | jq -r '.title')
+                JSON_BODY=$(jq -n --arg file "$FILE" --arg line "$LINE" --arg rule "$RULE" '{"body": "Error in \($file) at line \($line) for rule \($rule)."}' | jq -r '.body')
 
-              # Add eslint-disable comment with issue link
-              sed -i "${LINE}i // eslint-disable-next-line $RULE // See: $ISSUE_URL" "$FILE"
+                # Create a GitHub issue
+                ISSUE_URL=$(curl -s -X POST -H "Authorization: token ***" \
+                  -d "{\"title\": \"$JSON_TITLE\", \"body\": \"$JSON_BODY\"}" \
+                  "https://api.github.com/repos/ImLunaHey/test123/issues" | jq -r '.html_url')
 
-              # Commit the change
-              git config --global user.name "GitHub Actions Bot"
-              git config --global user.email "actions@github.com"
-              git add "$FILE"
-              git commit -m "Add eslint-disable for $RULE in $FILE (See: $ISSUE_URL)"
-            done
+                # Check if ISSUE_URL is valid
+                if [ -z "$ISSUE_URL" ]; then
+                  echo "Failed to create an issue for RULE=$RULE in FILE=$FILE at LINE=$LINE."
+                  continue
+                fi
 
-            # Push all changes to main
-            git push origin main
-          fi
+                # Add eslint-disable comment with issue link
+                sed -i "${LINE}i // eslint-disable-next-line $RULE // See: $ISSUE_URL" "$FILE"
+
+                # Commit the change
+                git config --global user.name "GitHub Actions Bot"
+                git config --global user.email "actions@github.com"
+                git add "$FILE"
+                git commit -m "Add eslint-disable for $RULE in $FILE (See: $ISSUE_URL)"
+              done
+
+              # Push all changes to main
+              git push origin main
+            else
+              echo "No errors to process."
+            fi
 
       - name: Close Fixed Issues
         run: |
