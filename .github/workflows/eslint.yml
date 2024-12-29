@@ -51,7 +51,14 @@ jobs:
             # Step 3: Prepare JSON Payload for GitHub Issue
             echo "Preparing GitHub issue payload..."
             JSON_TITLE=$(jq -n --arg rule "$RULE" --arg file "$FILE" '{"title": "ESLint Error: \($rule) in \($file)"}' | jq -r '.title')
-            JSON_BODY=$(jq -n --arg file "$FILE" --arg line "$LINE" --arg rule "$RULE" '{"body": "Error in \($file) at line \($line) for rule \($rule)."}' | jq -r '.body')
+            JSON_BODY=$(jq -n \
+              --arg file "$FILE" \
+              --arg line "$LINE" \
+              --arg rule "$RULE" \
+              --arg repo "${{ github.repository }}" \
+              --arg branch "${{ github.ref_name }}" \
+              '{"body": "Error in [`\($file):\($line)`](https://github.com/\($repo)/blob/\($branch)/\($file)#L\($line)) for rule \($rule)."}' | jq -r '.body')
+
 
             echo "Prepared Title: $JSON_TITLE"
             echo "Prepared Body: $JSON_BODY"
