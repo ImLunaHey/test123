@@ -29,10 +29,18 @@ jobs:
               LINE=$(echo $error | jq -r '.line')
               RULE=$(echo $error | jq -r '.ruleId')
 
+              # Debug output
+              echo "Processing: RULE=$RULE, FILE=$FILE, LINE=$LINE"
+
               # Create a GitHub issue
-              ISSUE_URL=$(curl -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-                -d "{\"title\": \"ESLint Error: $RULE in $FILE\", \"body\": \"Error in $FILE at line $LINE for rule $RULE.\"}" \
-                "https://api.github.com/repos/${{ github.repository }}/issues" | jq -r '.html_url')
+              ISSUE_URL=$(curl -X POST -H "Authorization: token ***" \
+                -d "$(printf '{"title": "ESLint Error: %s in %s", "body": "Error in %s at line %s for rule %s."}' \
+                  "$(echo "$RULE" | jq -sRr @json)" \
+                  "$(echo "$FILE" | jq -sRr @json)" \
+                  "$(echo "$FILE" | jq -sRr @json)" \
+                  "$(echo "$LINE" | jq -sRr @json)" \
+                  "$(echo "$RULE" | jq -sRr @json)")" \
+                "https://api.github.com/repos/ImLunaHey/test123/issues" | jq -r '.html_url')
 
               # Add eslint-disable comment with issue link
               sed -i "${LINE}i // eslint-disable-next-line $RULE // See: $ISSUE_URL" "$FILE"
