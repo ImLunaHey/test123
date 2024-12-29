@@ -110,8 +110,6 @@ jobs:
           echo "All tasks completed successfully."
 
       - name: Close Fixed Issues
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "Checking for fixed errors..."
 
@@ -138,7 +136,7 @@ jobs:
               echo "Found linked issue: $ISSUE_URL"
 
               # Close the GitHub issue
-              curl -s -X PATCH -H "Authorization: Bearer $GITHUB_TOKEN" \
+              curl -s -X PATCH -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
                 -d "{\"state\": \"closed\", \"body\": \"Fixed in $(git rev-parse HEAD)\"}" \
                 "$ISSUE_URL"
 
