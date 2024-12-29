@@ -58,7 +58,7 @@ jobs:
 
             # Step 4: Create GitHub Issue
             echo "Creating GitHub issue..."
-            ISSUE_RESPONSE=$(curl -s -X POST -H "Authorization: token ***" \
+            ISSUE_RESPONSE=$(curl -s -X POST -H "authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
               -d "{\"title\": \"$JSON_TITLE\", \"body\": \"$JSON_BODY\"}" \
               "https://api.github.com/repos/ImLunaHey/test123/issues")
 
